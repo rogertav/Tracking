@@ -1,0 +1,170 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+from datetime import datetime
+import re
+import json
+import os
+
+class SethMoultonTracker:
+    def __init__(self):
+        self.base_url = "https://moulton.house.gov"
+        self.votes_url = f"{self.base_url}/votes-and-legislation"
+        self.press_url = f"{self.base_url}/press-releases"
+        self.data_file = "moulton_tracker_data.json"
+        self.current_date = datetime.now().strftime("%Y-%m-%d")
+        self.data = {
+            "votes": [],
+            "statements": [],
+            "press_releases": [],
+            "controversies": []
+        }
+        self.load_existing_data()
+
+    def load_existing_data(self):
+        """Load existing data from JSON file if it exists."""
+        if os.path.exists(self.data_file):
+            with open(self.data_file, 'r') as f:
+                self.data = json.load(f)
+
+    def save_data(self):
+        """Save data to JSON file."""
+        with open(self.data_file, 'w') as f:
+            json.dump(self.data, f, indent=4)
+
+    def fetch_page_content(self, url):
+        """Fetch HTML content from a URL."""
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return BeautifulSoup(response.content, 'html.parser')
+        except requests.RequestException as e:
+            print(f"Error fetching {url}: {e}")
+            return None
+
+    def track_votes(self):
+        """Scrape voting records from the votes and legislation page."""
+        soup = self.fetch_page_content(self.votes_url)
+        if not soup:
+            return
+
+        vote_entries = soup.find_all("div", class_="vote-explainer")  # Hypothetical class name
+        for entry in vote_entries:
+            title = entry.find("h3")  # Adjust based on actual structure
+            date = entry.find("span", class_="date")  # Hypothetical class
+            description = entry.find("p")
+            
+            if title and date:
+                vote_data = {
+                    "title": title.get_text(strip=True),
+                    "date": date.get_text(strip=True),
+                    "description": description.get_text(strip=True) if description else "No description",
+                    "scraped_date": self.current_date
+                }
+                if vote_data not in self.data["votes"]:
+                    self.data["votes"].append(vote_data)
+                    print(f"Added vote: {vote_data['title']}")
+
+    def track_statements_and_press(self):
+        """Scrape statements and press releases from the press releases page."""
+        soup = self.fetch_page_content(self.press_url)
+        if not soup:
+            return
+
+        articles = soup.find_all("article")  # Hypothetical tag
+        for article in articles:
+            title = article.find("h2")
+            date = article.find("time")
+            content = article.find("div", class_="content")  # Hypothetical class
+            
+            if title and date:
+                item_data = {
+                    "title": title.get_text(strip=True),
+                    "date": date.get_text(strip=True),
+                    "content": content.get_text(strip=True) if content else "No content",
+                    "scraped_date": self.current_date
+                }
+                # Categorize as statement or press release based on keywords
+                if "statement" in item_data["title"].lower():
+                    if item_data not in self.data["statements"]:
+                        self.data["statements"].append(item_data)
+                        print(f"Added statement: {item_data['title']}")
+                else:
+                    if item_data not in self.data["press_releases"]:
+                        self.data["press_releases"].append(item_data)
+                        print(f"Added press release: {item_data['title']}")
+
+    def track_controversies(self):
+        """Search the web and X for controversies related to Seth Moulton."""
+        # Web search (simplified, ideally use an API like Google Search)
+        search_url = "https://www.google.com/search?q=seth+moulton+controversy+site:*.edu+site:*.org+site:*.gov+-inurl:(signup+login)"
+        soup = self.fetch_page_content(search_url)
+        if soup:
+            results = soup.find_all("div", class_="g")  # Google result class
+            for result in results:
+                title = result.find("h3")
+                snippet = result.find("div", class_="VwiC3b")  # Snippet class
+                if title and snippet:
+                    controversy_data = {
+                        "title": title.get_text(strip=True),
+                        "snippet": snippet.get_text(strip=True),
+                        "source": "Web",
+                        "scraped_date": self.current_date
+                    }
+                    if controversy_data not in self.data["controversies"]:
+                        self.data["controversies"].append(controversy_data)
+                        print(f"Added controversy: {controversy_data['title']}")
+
+        # X search (placeholder; requires API access)
+        # Example: Use tweepy with X API to search "seth moulton controversy"
+        # For simplicity, this is a mock implementation
+        mock_x_posts = [
+            {"text": "Rep. Seth Moulton faces backlash over transgender sports comments", "date": self.current_date}
+        ]
+        for post in mock_x_posts:
+            controversy_data = {
+                "title": post["text"][:50] + "...",
+                "snippet": post["text"],
+                "source": "X",
+                "scraped_date": self.current_date
+            }
+            if controversy_data not in self.data["controversies"]:
+                self.data["controversies"].append(controversy_data)
+                print(f"Added X controversy: {controversy_data['title']}")
+
+    def generate_report(self):
+        """Generate a summary report in a pandas DataFrame."""
+        votes_df = pd.DataFrame(self.data["votes"])
+        statements_df = pd.DataFrame(self.data["statements"])
+        press_df = pd.DataFrame(self.data["press_releases"])
+        controversies_df = pd.DataFrame(self.data["controversies"])
+
+        print("\n=== Seth Moulton Tracker Report ===")
+        print(f"Date: {self.current_date}")
+        print("\nVotes:")
+        print(votes_df[["title", "date"]] if not votes_df.empty else "No votes recorded.")
+        print("\nStatements:")
+        print(statements_df[["title", "date"]] if not statements_df.empty else "No statements recorded.")
+        print("\nPress Releases:")
+        print(press_df[["title", "date"]] if not press_df.empty else "No press releases recorded.")
+        print("\nControversies:")
+        print(controversies_df[["title", "source"]] if not controversies_df.empty else "No controversies recorded.")
+
+        # Save to CSV
+        votes_df.to_csv("moulton_votes.csv", index=False)
+        statements_df.to_csv("moulton_statements.csv", index=False)
+        press_df.to_csv("moulton_press_releases.csv", index=False)
+        controversies_df.to_csv("moulton_controversies.csv", index=False)
+
+    def run(self):
+        """Run the tracker."""
+        print("Tracking Seth Moulton's activities...")
+        self.track_votes()
+        self.track_statements_and_press()
+        self.track_controversies()
+        self.save_data()
+        self.generate_report()
+
+if __name__ == "__main__":
+    tracker = SethMoultonTracker()
+    tracker.run()
